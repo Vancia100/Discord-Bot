@@ -1,8 +1,11 @@
 require('dotenv').config();
-const { Client, IntentsBitField, ButtonBuilder, ButtonStyle, ActionRowBuilder} = require("discord.js");
+const { Client, IntentsBitField, REST, Routes, ApplicationCommandOptionType, MessageFlags, PermissionFlagsBits} = require("discord.js");
 const fs = require("fs");
-const {ping} = require("minecraft-protocol")
-const mongoose = require("mongoose")
+const path = require("path")
+const mongoose = require("mongoose");
+const rest = new REST({ version: "10"}).setToken(process.env.TOKEN);
+const guildDB = require("./Schemas/guildSchema");
+
 
 const client = new Client({
     intents: [
@@ -13,139 +16,164 @@ const client = new Client({
     ],
 })
 
-const server = {
-    host: process.env.Minecraft_id,
-    port: process.env.Minecraft_port,     
-    noPongTimeout: 1000,
-    closeTimeout: 1000    
-  };
+const basicCommands = [{
+    name:"init",
+    description:"The initial setup required to make the bot work on this server",
+    options:[
+    {
+    name:"channel",
+    description: "What channel to use to send commands",
+    type:ApplicationCommandOptionType.Channel,
+    },],
+    },
+    {
+        name:"test",
+        description:"Does absolutely nothing"
+    }
+]
+
+async function basicCommandsEnabled () {
+    const commands = await updateRegistry()
+    console.log("Started doing things...", commands)
+    for (const command of commands) {
+        const newOption = {
+            name: `disable-${command.name}`,
+            description: `False to disable the command ${command.name}`,
+            type: ApplicationCommandOptionType.Boolean,
+            default: false,
+        };
+        basicCommands[0].options.push(newOption)
+    }
+    //console.log("Things Pushed!", basicCommands)
+}
+
+const commandRegistry = new Map();
+
+
+async function updateRest(guildId, files) {
+    console.log("updating Rest!")
+    console.log(files)
+    await rest.put(
+        Routes.applicationGuildCommands(
+            process.env.Client_id, 
+            guildId,
+        ),
+        {body: files})
+}
+
+
+async function updateRegistry(guildId = null, enabled = false) {
+    console.log("registry uppdating...")
+    const commandFiles = fs.readdirSync(path.join(__dirname, "commands")).filter(file => file.endsWith(".js"))
+    let bodies = []
+    for (const file of commandFiles) {
+    const command = require(`./commands/${file}`)
+    if (enabled[command.command.name]) continue;
+    commandRegistry.set(command.command.name, command)
+    bodies.push(command.command)
+    }
+    if (!guildId) return bodies;
+    //console.log(bodies);
+    updateRest(guildId, bodies.concat(basicCommands));
+}
+
 
 client.on("ready", (c) =>{
     console.log(`${c.user.tag} is now online!`)
 });
 
-client.on("messageCreate", (message) => {
-    if (message.author.bot) {
-        return;
-    }
-    console.log(message.content)
-});
 
-client.on("interactionCreate",async (interaction) => {
-    if (interaction.channelId === process.env.Channel_id) {
-
-    if (interaction.customId === "att") {
-        interaction.user.send("Funkar det?")
-        interaction.reply(
-            {
-                content: "Server Ownder att:ed",
-                ephemeral: true
-            }
-        )
+client.on("guildCreate", async (guild) => {
+    console.log("joined server", guild.name)
+    try {
+        console.log("Registering slash commads")
+                updateRest(guild.id,basicCommands)
+        } catch (error) {
+        console.log(error)
     }
-    if (interaction.commandName === "initserver") {
-        const Serversettings = {
-            server_id:interaction.commandGuildId,
-            
-        }
-    }
-    if (interaction.commandName === "ping"){
-        checkOnlinePlayers((err, response) => {
-            if (err) {
-                interaction.reply({
-                    content:"The server is not online eight now \n Press the button to @ server owner",
-                    components: [attButton,]
-
-                })
-            }
-            else {
-                const onlienePlayers = response.players.online
-                console.log(onlienePlayers)
-                if (onlienePlayers != 0) {
-                    var stringResponse = `${onlienePlayers} utav ${response.players.max} spelare är online. Det är:`
-                    playerArray = response.players.sample
-                    for (let i in playerArray) {
-                        stringResponse = stringResponse + "\n" + playerArray[i].name
-                    }
-                    interaction.reply(stringResponse)
-                }
-                else{
-                    interaction.reply("Det är ingen online just nu")
-                }
-            }
-        })
-    }
-
-    if (interaction.commandName === "bellman"){
-        const Svar = interaction.options.get("add")
-        if (Svar) {
-            console.log(Svar, "Lades till")
-            var SvarValue = Svar.value
-        }
-        else var SvarValue = null
-        jsonWrighter("bellman.json", SvarValue, (err, jsonString) =>{
-            if (err) {
-                console.error(err)
-            }
-            if (jsonString){
-                interaction.reply(jsonString[Math.floor(Math.random()*jsonString.length)])
-            }
-            else {
-                interaction.reply("Tack för skämtet! \n Det kommer att användas väl...")
-            }
-        })
-    };
-}
-else {
-    interaction.reply({
-        ephemeral: true,
-        content:"Wrong Channel Mate!"
-    })
-}
 })
 
-function jsonWrighter(filePath, data = null, cb) {
-    fs.readFile(filePath, "utf-8", (err, fileData) =>{
-        if (err) {
-            return cb && cb(err)
-        }
-        const Data = JSON.parse(fileData);
-        if (data){
-            Data.push(data)
-            fs.writeFile(filePath, JSON.stringify(Data, null, 2), err =>{
-                if (err){
-                    return cb && cb(err)
-                } else {
-                    return cb && cb(null, null)
-                }
-            })
-        }else {
-            return cb && cb(null, Data)
-        }
-       
-        
+
+client.on("interactionCreate",async (interaction) => {
+    channelIdDb = await guildDB.findOne({guild: interaction.guildId})
+    if (channelIdDb && !(channelIdDb.channel == interaction.channelId))
+    {
+    await interaction.reply({
+        content:"Wrong channel mate",
+        ephemeral: true
     })
+    return;
+    }
+    const command = commandRegistry.get(interaction.commandName)
+    if (command){
+        try {
+        await command.code(interaction, client);
+        } catch (error) {
+        console.log(error)
+        try {
+            await interaction.reply({
+                content:`something went wrong with the command ${command}`,
+                ephemeral:true
+            })
+        } catch (error) {
+            console.log(error)
+        }
+        }
+    }
+
+
+
+if (interaction.commandName === "init") {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        interaction.reply({
+            content:"This command is only for admins",
+            ephemeral:true
+        })
+    }
+const returnValue = interaction.options.get("channel")
+const choises = await updateRegistry()
+var enabled = {}
+console.log("It has started!")
+    for (const choise of choises) {
+        enabled[choise.name] = interaction.options.get(`disable-${choise.name}`) ? interaction.options.get(`disable-${choise.name}`).value : false;
+    }
+    console.log(enabled)
+if (returnValue){
+    if (channelIdDb) {
+        channelIdDb.channel = returnValue.value
+        await channelIdDb.save()
+        interaction.reply("Channel Updated!")
+        return
+    }
+       const Serversettings = new guildDB({
+            guild: interaction.guildId,
+            channel: returnValue.value,
+        })
+        await Serversettings.save()
+        await interaction.reply("It worked!")
+        return
+    }
+    await updateRegistry(interaction.guildId, enabled)
+    await interaction.reply("Commands Updated!")
 }
 
-function checkOnlinePlayers(cb) {
-    ping(server, (error, response) => {
-      if (error) {
-        console.error('Failed to ping server:\n', error);
-        return cb && cb(error, null)
-      }
-      return cb && cb(null, response)
-    });
-  }
+
+if (interaction.commandName === "test"){
+    await interaction.reply("test worked!")
+}
+});
 
 
-const attButton = new ActionRowBuilder();
 
-attButton.components.push(
+(async () => {
+    try {
+        mongoose.set("strictQuery", false)
+        await mongoose.connect(process.env.MongoDB, {keepAlive: true})
+        console.log("DB online (Mongo)")
+        await basicCommandsEnabled()
+    } catch (error) {
+        console.log(error)
+    }
 
-new ButtonBuilder()
-.setLabel(`<@vancia100>`)
-.setCustomId("att")
-.setStyle(ButtonStyle.Primary)
-);
-client.login(process.env.TOKEN);
-
+    client.login(process.env.TOKEN);
+})();

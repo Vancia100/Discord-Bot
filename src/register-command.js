@@ -2,38 +2,21 @@ const {REST, Routes, Options, ApplicationCommandOptionType} = require("discord.j
 require("dotenv").config();
 
 const commands = [
-    {
-        name: "ping",
-        description: "status på minecraft servern"
-    },
-    {
-        name:"bellman",
-        description: "Gissa 3 gånger vad den gör...",
-        options: [
-            {
-                name: "add",
-                description: "Lägg till yterligare en masterpiece",
-                type: ApplicationCommandOptionType.String,
-            }
-        ]
-    },
-    {
-        name:"initserver",
-        description: "Initiates a Minecraft server to this discord server",
-        options: [
-            {
-            name:"server-ip",
-            description: "What is the server IP?",
-            type: ApplicationCommandOptionType.String,
-            require:true
-            },
-            {name:"server-mod", 
-            description: "Who is modderation this server?",
-            type: ApplicationCommandOptionType.User,
-            require: true
-            }
-            ]
-    }
+    [{
+        name:"init",
+        description:"The initial setup required to make the bot work on this server",
+        options:[
+        {
+        name:"channel",
+        description: "What channel to use to send commands",
+        type:ApplicationCommandOptionType.Channel,
+        },]
+        },
+        {
+            name:"test",
+            description:"Does absolutely nothing"
+        }
+    ]
 ];
 
 const rest = new REST({ version: "10"}).setToken(process.env.TOKEN);
@@ -44,7 +27,7 @@ const rest = new REST({ version: "10"}).setToken(process.env.TOKEN);
         await rest.put(
             Routes.applicationGuildCommands(
                 process.env.Client_id, 
-                process.env.Guild_id2
+                process.env.Guild_id
             ),
             {body: commands}
         )
