@@ -95,9 +95,11 @@ client.on("guildCreate", async (guild) => {
 
 
 client.on("interactionCreate",async (interaction) => {
+    console.log("Interaction Created!")
     channelIdDb = await guildDB.findOne({guild: interaction.guildId})
     if (channelIdDb && !(channelIdDb.channel == interaction.channelId))
     {
+        console.log("Wrong channel")
     await interaction.reply({
         content:"Wrong channel mate",
         ephemeral: true
@@ -171,9 +173,9 @@ if (interaction.commandName === "test"){
         await mongoose.connect(process.env.MongoDB)
         console.log("DB online (Mongo)")
         await basicCommandsEnabled()
+        await client.login(process.env.TOKEN);
     } catch (error) {
         console.log(error)
     }
 
-    client.login(process.env.TOKEN);
 })();
