@@ -168,7 +168,7 @@ if (interaction.commandName === "test"){
 (async () => {
     try {
         mongoose.set("strictQuery", false)
-        await mongoose.connect(process.env.MongoDB, {keepAlive: true})
+        await mongoose.connect(process.env.MongoDB)
         console.log("DB online (Mongo)")
         await basicCommandsEnabled()
     } catch (error) {
